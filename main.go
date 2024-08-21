@@ -35,6 +35,7 @@ func main() {
 	// HTTP route for retrieving the QR code image
 	r.GET("/qr/:id", func(c *gin.Context) {
 		id := c.Param("id")
+
 		png, err := qrcode.Encode(id, qrcode.Medium, 256)
 		if err != nil {
 			c.AbortWithStatus(http.StatusInternalServerError)
@@ -49,7 +50,10 @@ func main() {
 func handleWebSocket(ws *websocket.Conn) {
 	defer ws.Close()
 
-	for {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
 		id := uuid.New().String()
 		data := fmt.Sprintf("Dynamic data %s", id)
 		qrCodeData := QRCodeData{
@@ -62,8 +66,5 @@ func handleWebSocket(ws *websocket.Conn) {
 			fmt.Printf("Error sending QR code data: %v", err)
 			return
 		}
-
-		// Wait for 5 seconds before updating the QR code data
-		time.Sleep(5 * time.Second)
 	}
 }
