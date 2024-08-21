@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ .title }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            flex-direction: column;
+            text-align: center;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        #qr-canvas {
+            margin-top: 20px;
+            border: 2px solid #333;
+            background-color: #fff;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        #qr-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .loading {
+            font-size: 1.2em;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <h1>{{ .title }}</h1>
+    <div id="qr-container">
+        <canvas id="qr-canvas" width="256" height="256"></canvas>
+        <p class="loading">Waiting for QR Code...</p>
+    </div>
+
+    <script>
+        const qrCanvas = document.getElementById('qr-canvas');
+        const qrContext = qrCanvas.getContext('2d');
+        const loadingText = document.querySelector('.loading');
+
+        // Create a WebSocket connection to the server
+        const socket = new WebSocket("ws://localhost:8080/ws");
+
+        socket.onmessage = async (event) => {
+            const qrCodeData = JSON.parse(event.data);
+            console.log("Received QR code data:", qrCodeData);
+
+            // Fetch the QR code image
+            const response = await fetch(`http://localhost:8080/qr/${qrCodeData.id}`);
+            const blob = await response.blob();
+            const imgBitmap = await createImageBitmap(blob);
+
+            // Clear the canvas and draw the new QR code
+            qrContext.clearRect(0, 0, qrCanvas.width, qrCanvas.height);
+            qrContext.drawImage(imgBitmap, 0, 0, qrCanvas.width, qrCanvas.height);
+
+            // Hide the loading text
+            loadingText.style.display = 'none';
+        };
+    </script>
+</body>
+</html>

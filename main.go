@@ -7,18 +7,25 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/skip2/go-qrcode"
 	"golang.org/x/net/websocket"
 )
 
 type QRCodeData struct {
-	ID   string `json:"id"`
+	ID   int64  `json:"id"`
 	Data string `json:"data"`
 }
 
 func main() {
 	r := gin.Default()
+	r.LoadHTMLGlob("views/*")
+
+	// Route to serve the HTML page
+	r.GET("/index", func(c *gin.Context) {
+		c.HTML(http.StatusOK, "index.tmpl", gin.H{
+			"title": "Dynamic QR Code Generator",
+		})
+	})
 
 	// WebSocket route for publishing QR code data
 	r.GET("/ws", func(c *gin.Context) {
@@ -34,9 +41,9 @@ func main() {
 
 	// HTTP route for retrieving the QR code image
 	r.GET("/qr/:id", func(c *gin.Context) {
-		id := c.Param("id")
+		id := c.GetInt64("id")
 
-		png, err := qrcode.Encode(id, qrcode.Medium, 256)
+		png, err := qrcode.Encode(fmt.Sprintf("%d", id), qrcode.Medium, 256)
 		if err != nil {
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
@@ -54,8 +61,8 @@ func handleWebSocket(ws *websocket.Conn) {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		id := uuid.New().String()
-		data := fmt.Sprintf("Dynamic data %s", id)
+		id := time.Now().UnixNano()
+		data := fmt.Sprintf("Dynamic data %d", id)
 		qrCodeData := QRCodeData{
 			ID:   id,
 			Data: data,
