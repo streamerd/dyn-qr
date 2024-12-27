@@ -20,6 +20,8 @@ type QRCodeData struct {
 
 var dataMap = make(map[string]string)
 
+const FIXED_BUS_STOP = 4242 // You can change this to any number you want
+
 func main() {
 	r := gin.Default()
 	r.LoadHTMLGlob("views/*")
@@ -99,8 +101,8 @@ func handleWebSocket(ws *websocket.Conn) {
 func RandomJSON() (string, error) {
 	rand.Seed(uint64((time.Now().UnixNano() / 1000000) % 1000000))
 
-	// Generate a random stop number between 1 and 10000.
-	stop := rand.Intn(10000) + 1
+	// Use the fixed bus stop number instead of generating a random one
+	stop := FIXED_BUS_STOP
 
 	// Generate random bus data
 	numBuses := rand.Intn(5) + 1 // Random number of buses between 1 and 5

@@ -7,70 +7,151 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
             margin: 0;
-            flex-direction: column;
-            text-align: center;
+            padding: 0;
+            min-height: 100vh;
+            background-color: white;
         }
-
-        h1 {
+        .container {
+            max-width: 800px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 20px;
+            background: white;
+        }
+        .qr-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        #qrCode {
+            max-width: 256px;
+            height: auto;
+            margin-bottom: 20px;
+        }
+        .bus-info {
+            width: 100%;
+        }
+        .header-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        @media (max-width: 600px) {
+            .header-info {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .refresh-time {
+                margin-left: 4px;
+            }
+        }
+        .stop-number {
+            font-size: 1.5em;
             color: #333;
         }
-
-        #qr-canvas {
-            margin-top: 20px;
-            border: 2px solid #333;
-            background-color: #fff;
-            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+        .refresh-time {
+            color: #666;
+            font-size: 0.9em;
         }
-
-        #qr-container {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
+        .bus-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
         }
-
-        .loading {
-            font-size: 1.2em;
-            color: #888;
+        .bus-table th, .bus-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .bus-table th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+            color: #495057;
+        }
+        .minutes {
+            color: #2c5282;
+            font-weight: bold;
+        }
+        .table-container {
+            margin: 10px 0;
         }
     </style>
 </head>
 <body>
-    <h1>{{ .title }}</h1>
-    <div id="qr-container">
-        <canvas id="qr-canvas" width="256" height="256"></canvas>
-        <p class="loading">Waiting for QR Code...</p>
+    <div class="container">
+        <div class="qr-container">
+            <img id="qrCode" alt="QR Code" src="">
+        </div>
+        <div class="bus-info">
+            <div class="header-info">
+                <div class="stop-number">Bus Stop: <span id="stopNumber">-</span></div>
+                <div class="refresh-time" id="lastUpdate"></div>
+            </div>
+            <div class="table-container">
+                <table class="bus-table">
+                    <thead>
+                        <tr>
+                            <th>Bus Line</th>
+                            <th>Arrival In</th>
+                        </tr>
+                    </thead>
+                    <tbody id="busTableBody">
+                        <!-- Data will be inserted here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
     <script>
-        const qrCanvas = document.getElementById('qr-canvas');
-        const qrContext = qrCanvas.getContext('2d');
-        const loadingText = document.querySelector('.loading');
+        const ws = new WebSocket(`ws://${window.location.host}/ws`);
+        const qrCodeImg = document.getElementById('qrCode');
+        const stopNumberEl = document.getElementById('stopNumber');
+        const busTableBody = document.getElementById('busTableBody');
+        const lastUpdateEl = document.getElementById('lastUpdate');
 
-        // Create a WebSocket connection to the server
-        const socket = new WebSocket("ws://localhost:8080/ws");
+        function updateBusTable(data) {
+            const parsedData = JSON.parse(data);
+            
+            // Update stop number
+            stopNumberEl.textContent = parsedData.stop;
+            
+            // Clear existing table rows
+            busTableBody.innerHTML = '';
+            
+            // Add new rows for each bus
+            parsedData.incoming.forEach(bus => {
+                const [busLine, minutes] = Object.entries(bus)[0];
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${busLine}</td>
+                    <td class="minutes">${minutes} min${minutes === 1 ? '' : 's'}</td>
+                `;
+                busTableBody.appendChild(row);
+            });
 
-        socket.onmessage = async (event) => {
-            const qrCodeData = JSON.parse(event.data);
-            console.log("Received QR code data:", qrCodeData);
+            // Update refresh time
+            lastUpdateEl.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        }
 
-            // Fetch the QR code image
-            const response = await fetch(`http://localhost:8080/qr/${qrCodeData.id}`);
-            const blob = await response.blob();
-            const imgBitmap = await createImageBitmap(blob);
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            qrCodeImg.src = `/qr/${data.id}`;
+            updateBusTable(data.data);
+        };
 
-            // Clear the canvas and draw the new QR code
-            qrContext.clearRect(0, 0, qrCanvas.width, qrCanvas.height);
-            qrContext.drawImage(imgBitmap, 0, 0, qrCanvas.width, qrCanvas.height);
+        ws.onerror = function(error) {
+            console.error('WebSocket Error:', error);
+        };
 
-            // Hide the loading text
-            loadingText.style.display = 'none';
+        ws.onclose = function() {
+            console.log('WebSocket Connection Closed');
+            setTimeout(() => {
+                window.location.reload();
+            }, 5000);
         };
     </script>
 </body>
