@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,9 +20,32 @@ type QRCodeData struct {
 	Data string `json:"data"`
 }
 
-var dataMap = make(map[string]string)
+type Bus struct {
+	L string `json:"l"`
+	M int    `json:"m"`
+}
 
-const FIXED_BUS_STOP = 4242 // You can change this to any number you want
+type BusStop struct {
+	S int   `json:"s"`
+	B []Bus `json:"b"`
+}
+
+// Add a mutex for the bus queue
+var (
+	dataMap     = make(map[string]string)
+	busQueue    = make([]Bus, 0)
+	queueMutex  sync.Mutex
+	currentData string
+)
+
+// Constants for bus simulation
+const (
+	FIXED_BUS_STOP      = 4242
+	MAX_BUSES           = 8   // Maximum number of buses in queue
+	MIN_NEW_BUS_TIME    = 5   // Minimum minutes for a new bus
+	MAX_NEW_BUS_TIME    = 30  // Maximum minutes for a new bus
+	NEW_BUS_PROBABILITY = 0.3 // 30% chance of adding a new bus each tick
+)
 
 func main() {
 	r := gin.Default()
@@ -47,20 +72,30 @@ func main() {
 
 	// HTTP route for retrieving the QR code image
 	r.GET("/qr/:id", func(c *gin.Context) {
-		id := c.Param("id") // Get the ID from the URL parameter
+		id := c.Param("id")
 
-		// Retrieve the data associated with the ID (this is an example, you need to implement this)
-		data, err := RetrieveDataByID(id)
+		queueMutex.Lock()
+		data, exists := dataMap[id]
+		queueMutex.Unlock()
+
+		if !exists {
+			fmt.Printf("Data not found for ID: %s\n", id)
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+
+		c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+		c.Header("Pragma", "no-cache")
+		c.Header("Expires", "0")
+		c.Header("Content-Type", "image/png")
+
+		png, err := qrcode.Encode(data, qrcode.Low, 256)
 		if err != nil {
+			fmt.Printf("Error encoding QR: %v\n", err)
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
 
-		png, err := qrcode.Encode(data, qrcode.Medium, 256)
-		if err != nil {
-			c.AbortWithStatus(http.StatusInternalServerError)
-			return
-		}
 		c.Data(http.StatusOK, "image/png", png)
 	})
 
@@ -70,27 +105,29 @@ func main() {
 func handleWebSocket(ws *websocket.Conn) {
 	defer ws.Close()
 
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		id := time.Now().UnixNano()
-
-		data, err := RandomJSON()
+		data, err := generateBusData()
 		if err != nil {
-			fmt.Printf("Error generating random JSON: %v", err)
+			fmt.Printf("Error generating bus data: %v", err)
 			return
 		}
+
+		id := time.Now().UnixMilli()
+		idStr := fmt.Sprintf("%d", id)
+
+		queueMutex.Lock()
+		currentData = data
+		dataMap[idStr] = data // Store in map with the ID
+		queueMutex.Unlock()
 
 		qrCodeData := QRCodeData{
 			ID:   id,
 			Data: data,
 		}
 
-		// Store the data in the map
-		dataMap[fmt.Sprintf("%d", id)] = data
-
-		// Publish the QR code data over WebSocket
 		if err := websocket.JSON.Send(ws, qrCodeData); err != nil {
 			fmt.Printf("Error sending QR code data: %v", err)
 			return
@@ -98,30 +135,26 @@ func handleWebSocket(ws *websocket.Conn) {
 	}
 }
 
-func RandomJSON() (string, error) {
-	rand.Seed(uint64((time.Now().UnixNano() / 1000000) % 1000000))
+func generateBusData() (string, error) {
+	queueMutex.Lock()
+	defer queueMutex.Unlock()
 
-	// Use the fixed bus stop number instead of generating a random one
-	stop := FIXED_BUS_STOP
+	// Update existing bus times
+	updateBusQueue()
 
-	// Generate random bus data
-	numBuses := rand.Intn(5) + 1 // Random number of buses between 1 and 5
-	buses := make([]map[string]int, numBuses)
-
-	for i := 0; i < numBuses; i++ {
-		busLine := fmt.Sprintf("Bus %d", rand.Intn(100)+1) // Random bus line between 1 and 100
-		minutesLeft := rand.Intn(30) + 1                   // Random minutes left between 1 and 30
-		buses[i] = map[string]int{busLine: minutesLeft}
+	// Maybe add a new bus
+	if rand.Float64() < NEW_BUS_PROBABILITY && len(busQueue) < MAX_BUSES {
+		addNewBus()
 	}
 
 	// Create the data structure
-	data := map[string]interface{}{
-		"stop":     stop,
-		"incoming": buses,
+	data := BusStop{
+		S: FIXED_BUS_STOP,
+		B: busQueue,
 	}
 
 	// Marshal the data into a JSON string
-	jsonData, err := json.MarshalIndent(data, "", "  ")
+	jsonData, err := json.Marshal(data) // Remove MarshalIndent for smaller payload
 	if err != nil {
 		return "", err
 	}
@@ -129,10 +162,39 @@ func RandomJSON() (string, error) {
 	return string(jsonData), nil
 }
 
-func RetrieveDataByID(id string) (string, error) {
-	data, exists := dataMap[id]
-	if !exists {
-		return "", fmt.Errorf("data not found for ID: %s", id)
+func updateBusQueue() {
+	// No need for mutex here as it's called from generateBusData which has the lock
+	updatedQueue := make([]Bus, 0, len(busQueue))
+
+	for _, bus := range busQueue {
+		// Create a new bus instance instead of modifying the existing one
+		updatedBus := Bus{
+			L: bus.L,
+			M: bus.M - 1,
+		}
+
+		if updatedBus.M >= 0 {
+			updatedQueue = append(updatedQueue, updatedBus)
+		}
 	}
-	return data, nil
+
+	// Sort by arrival time
+	sort.Slice(updatedQueue, func(i, j int) bool {
+		return updatedQueue[i].M < updatedQueue[j].M
+	})
+
+	busQueue = updatedQueue
+}
+
+func addNewBus() {
+	// No need for mutex here as it's called from generateBusData which has the lock
+	lineNumber := rand.Intn(100) + 1
+	minutes := rand.Intn(MAX_NEW_BUS_TIME-MIN_NEW_BUS_TIME) + MIN_NEW_BUS_TIME
+
+	newBus := Bus{
+		L: fmt.Sprintf("%d", lineNumber),
+		M: minutes,
+	}
+
+	busQueue = append(busQueue, newBus)
 }
