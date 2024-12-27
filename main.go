@@ -50,6 +50,7 @@ const (
 func main() {
 	r := gin.Default()
 	r.LoadHTMLGlob("views/*")
+	r.Static("/assets", "./assets")
 
 	// Route to serve the HTML page
 	r.GET("/index", func(c *gin.Context) {

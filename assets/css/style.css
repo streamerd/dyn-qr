@@ -1,0 +1,83 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    background-color: white;
+}
+.container {
+    max-width: 800px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 20px;
+    background: white;
+}
+.qr-container {
+    text-align: center;
+    margin: 20px 0;
+    width: 256px;
+    height: 256px;
+    position: relative;
+    margin-left: auto;
+    margin-right: auto;
+    background: white;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+#qrCode {
+    width: 256px;
+    height: 256px;
+    display: block;
+}
+.bus-info {
+    width: 100%;
+}
+.header-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+@media (max-width: 600px) {
+    .header-info {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .refresh-time {
+        margin-left: 4px;
+    }
+}
+.stop-number {
+    font-size: 1.5em;
+    color: #333;
+}
+.refresh-time {
+    color: #666;
+    font-size: 0.9em;
+}
+.bus-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+.bus-table th, .bus-table td {
+    padding: 12px;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+}
+.bus-table th {
+    background-color: #f8f9fa;
+    font-weight: bold;
+    color: #495057;
+}
+.minutes {
+    color: #2c5282;
+    font-weight: bold;
+}
+.table-container {
+    margin: 10px 0;
+} 
